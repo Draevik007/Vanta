@@ -1,0 +1,329 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Parser</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    background: #0e1017;
+    color: #e8eaf2;
+    font-family: Arial, sans-serif;
+    padding: 35px 15px;
+}
+.container {
+    max-width: 850px;
+    margin: auto;
+}
+h1 { font-size: 27px; margin-bottom: 8px; }
+.subtitle { color: #858b9c; margin-bottom: 28px; }
+.panel {
+    background: #181c27;
+    border: 1px solid #292e3c;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 18px;
+}
+label {
+    display: block;
+    color: #aab0c1;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+textarea {
+    width: 100%;
+    height: 130px;
+    resize: vertical;
+    background: #10131c;
+    border: 1px solid #303749;
+    border-radius: 8px;
+    padding: 14px;
+    color: white;
+    font-size: 14px;
+    outline: none;
+    font-family: monospace;
+}
+textarea:focus { border-color: #8270ff; }
+button {
+    background: #7966f5;
+    color: white;
+    border: 0;
+    border-radius: 7px;
+    padding: 11px 17px;
+    cursor: pointer;
+    font-weight: 600;
+}
+button:hover { background: #6652e0; }
+.buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 13px;
+    flex-wrap: wrap;
+}
+.secondary { background: #292f40; }
+.result {
+    background: #181c27;
+    border: 1px solid #292e3c;
+    border-radius: 10px;
+    padding: 17px;
+    margin-top: 12px;
+}
+.result-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+.badge {
+    color: #9e91ff;
+    background: #292342;
+    padding: 5px 9px;
+    border-radius: 5px;
+    font-size: 11px;
+}
+.fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.field {
+    background: #10131c;
+    border-radius: 7px;
+    padding: 11px;
+    min-width: 0;
+}
+.field small {
+    display: block;
+    color: #858b9c;
+    margin-bottom: 7px;
+}
+.field strong {
+    font-size: 13px;
+    word-break: break-all;
+}
+.copy-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    background: #10131c;
+    padding: 10px;
+    border-radius: 7px;
+}
+.copy-row code {
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    color: #c7c1ff;
+}
+.copy-row button { padding: 7px 10px; font-size: 11px; }
+.error { color: #ff7777; font-size: 13px; }
+.empty {
+    text-align: center;
+    color: #777e90;
+    padding: 25px;
+}
+.stats {
+    display: flex;
+    gap: 20px;
+    color: #9299aa;
+    font-size: 13px;
+    margin-top: 18px;
+}
+@media(max-width:500px) {
+    .fields { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+    <h1>Proxy Parser</h1>
+    <div class="subtitle">Простой инструмент для разбора прокси</div>
+
+    <div class="panel">
+        <label>Вставьте прокси (каждый с новой строки)</label>
+        <textarea id="input" placeholder="user:password@host:port&#10;host:port:login:password"></textarea>
+        <div class="buttons">
+            <button onclick="parseProxies()">Разобрать прокси</button>
+            <button class="secondary" onclick="clearAll()">Очистить</button>
+        </div>
+    </div>
+
+    <div id="results">
+        <div class="empty">Результаты появятся здесь</div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+</div>
+
+<script>
+let parsed = [];
+
+function parseProxy(line) {
+    line = line.trim();
+
+    let protocol = "Не указан";
+    let original = line;
+
+    const match = line.match(/^(https?|socks4|socks5):\/\//i);
+    if (match) {
+        protocol = match[1].toUpperCase();
+        line = line.slice(match[0].length);
+    }
+
+    let host, port, login, password;
+
+    // Формат login:password@host:port
+    if (line.includes("@")) {
+        const parts = line.split("@");
+        if (parts.length !== 2) throw new Error("Неверный формат @");
+
+        const auth = parts[0];
+        const address = parts[1];
+
+        const authSeparator = auth.indexOf(":");
+        if (authSeparator < 0) throw new Error("Нет логина или пароля");
+
+        login = auth.slice(0, authSeparator);
+        password = auth.slice(authSeparator + 1);
+
+        const addressParts = address.split(":");
+        if (addressParts.length !== 2) throw new Error("Неверный Host:Port");
+
+        [host, port] = addressParts;
+    }
+
+    // Формат host:port:login:password
+    else {
+        const parts = line.split(":");
+        if (parts.length !== 4) throw new Error("Неизвестный формат");
+
+        [host, port, login, password] = parts;
+    }
+
+    if (!host || !port || !login || !password)
+        throw new Error("Есть пустые поля");
+
+    if (!/^\d+$/.test(port) || +port < 1 || +port > 65535)
+        throw new Error("Некорректный порт");
+
+    return { host, port, login, password, protocol, original };
+}
+
+function parseProxies() {
+    const lines = document.getElementById("input").value
+        .split(/\r?\n/)
+        .map(x => x.trim())
+        .filter(Boolean);
+
+    parsed = lines.map(line => {
+        try {
+            return { ...parseProxy(line), error: null };
+        } catch(e) {
+            return { original: line, error: e.message };
+        }
+    });
+
+    render();
+}
+
+function render() {
+    const results = document.getElementById("results");
+    const valid = parsed.filter(p => !p.error).length;
+    const invalid = parsed.length - valid;
+
+    document.getElementById("stats").innerHTML =
+        `Всего: ${parsed.length} | Успешно: ${valid} | Ошибки: ${invalid}`;
+
+    if (!parsed.length) {
+        results.innerHTML = '<div class="empty">Нет прокси для отображения</div>';
+        return;
+    }
+
+    results.innerHTML = parsed.map((p, i) => {
+        if (p.error) {
+            return `
+            <div class="result">
+                <div class="result-head">
+                    <strong>Прокси ${i+1}</strong>
+                    <span class="badge" style="color:#ff7777">Ошибка</span>
+                </div>
+                <div class="error">${escapeHTML(p.error)}</div>
+                <div class="copy-row">
+                    <code>${escapeHTML(p.original)}</code>
+                </div>
+            </div>`;
+        }
+
+        return `
+        <div class="result">
+            <div class="result-head">
+                <strong>Прокси ${i+1}</strong>
+                <span class="badge">${p.protocol}</span>
+            </div>
+
+            <div class="fields">
+                ${field("Host / IP", p.host)}
+                ${field("Port", p.port)}
+                ${field("Login", p.login)}
+                ${field("Password", p.password)}
+            </div>
+
+            ${copyRow("Стандартный формат", `${p.host}:${p.port}:${p.login}:${p.password}`)}
+            ${copyRow("Формат URL", `${p.protocol.toLowerCase() === "не указан" ? "proxy" : p.protocol.toLowerCase()}://${encodeURIComponent(p.login)}:${encodeURIComponent(p.password)}@${p.host}:${p.port}`)}
+        </div>`;
+    }).join("");
+}
+
+function field(name, value) {
+    return `<div class="field">
+        <small>${name}</small>
+        <strong>${escapeHTML(value)}</strong>
+    </div>`;
+}
+
+function copyRow(name, value) {
+    return `<div class="copy-row">
+        <div style="min-width:0">
+            <small style="display:block;color:#858b9c;margin-bottom:5px">${name}</small>
+            <code>${escapeHTML(value)}</code>
+        </div>
+        <button onclick="copyText(${JSON.stringify(value).replace(/"/g, '&quot;')})">Копировать</button>
+    </div>`;
+}
+
+function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, c => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;",
+        '"':"&quot;", "'":"&#39;"
+    })[c]);
+}
+
+async function copyText(value) {
+    try {
+        await navigator.clipboard.writeText(value);
+    } catch(e) {
+        const el = document.createElement("textarea");
+        el.value = value;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        el.remove();
+    }
+}
+
+function clearAll() {
+    document.getElementById("input").value = "";
+    document.getElementById("results").innerHTML =
+        '<div class="empty">Результаты появятся здесь</div>';
+    document.getElementById("stats").innerHTML = "";
+    parsed = [];
+}
+</script>
+</body>
+</html>
